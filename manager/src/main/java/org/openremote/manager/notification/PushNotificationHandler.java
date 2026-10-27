@@ -256,34 +256,19 @@ public class PushNotificationHandler extends RouteBuilder implements Notificatio
           target -> {
             Notification.TargetType targetType = target.getType();
             String targetId = target.getId();
-            // Do not require an FCM token in the query; consoles without a token must still be
-            // mapped so sendMessage can record "No FCM token found" (see direct ASSET targets).
-            AssetQuery assetQuery =
-                new AssetQuery()
-                    .select(new AssetQuery.Select().excludeAttributes())
-                    .types(ConsoleAsset.class);
-
-            switch (targetType) {
-              case REALM ->
-                  // Any console assets in the target realm
-                  assetQuery.realm(new RealmPredicate(targetId));
-              case USER ->
-                  // Any console assets linked to the target user
-                  assetQuery.userIds(targetId);
-              case ASSET ->
-                  // Any users linked to this asset and then their linked console assets
-                  assetQuery.userIds(
-                      assetStorageService.findUserAssetLinks(null, null, targetId).stream()
-                          .map(ual -> ual.getId().getUserId())
-                          .collect(Collectors.toSet())
-                          .toArray(String[]::new));
-            }
-
+            // Prefer consoles that still have an FCM token so a normal send is unchanged.
+            // #3113: when none do, map FCM consoles anyway so the send records
+            // "No FCM token found" instead of a missing-targets error. Browser consoles
+            // (push version "web") stay out of both queries.
             List<String> consoleAssetIds =
-                assetStorageService.findAll(assetQuery).stream()
-                    .map(Asset::getId)
-                    .distinct()
-                    .toList();
+                consoleIds(
+                    consoleAssetsLinkedTo(targetType, targetId).attributes(nonEmptyFcmToken()));
+            if (consoleAssetIds.isEmpty()) {
+              consoleAssetIds =
+                  consoleIds(
+                      consoleAssetsLinkedTo(targetType, targetId)
+                          .attributes(fcmProviderVersion()));
+            }
 
             if (!consoleAssetIds.isEmpty()) {
               // Special handling if target type is user (don't need to find all linked users)
@@ -597,6 +582,53 @@ public class PushNotificationHandler extends RouteBuilder implements Notificatio
     builder.setWebpushConfig(webpushConfigBuilder.build());
 
     return builder.build();
+  }
+
+  private AssetQuery consoleAssetsLinkedTo(Notification.TargetType targetType, String targetId) {
+    AssetQuery assetQuery =
+        new AssetQuery()
+            .select(new AssetQuery.Select().excludeAttributes())
+            .types(ConsoleAsset.class);
+
+    switch (targetType) {
+      case REALM ->
+          // Any console assets in the target realm
+          assetQuery.realm(new RealmPredicate(targetId));
+      case USER ->
+          // Any console assets linked to the target user
+          assetQuery.userIds(targetId);
+      case ASSET ->
+          // Any users linked to this asset and then their linked console assets
+          assetQuery.userIds(
+              assetStorageService.findUserAssetLinks(null, null, targetId).stream()
+                  .map(ual -> ual.getId().getUserId())
+                  .collect(Collectors.toSet())
+                  .toArray(String[]::new));
+    }
+    return assetQuery;
+  }
+
+  private static AttributePredicate nonEmptyFcmToken() {
+    return new AttributePredicate(
+        ConsoleAsset.CONSOLE_PROVIDERS,
+        new ValueEmptyPredicate().negate(true),
+        false,
+        new NameValuePredicate.Path(PushNotificationMessage.TYPE, "data", "token"));
+  }
+
+  private static AttributePredicate fcmProviderVersion() {
+    return new AttributePredicate(
+        ConsoleAsset.CONSOLE_PROVIDERS,
+        new StringPredicate(FCM_PROVIDER_NAME),
+        false,
+        new NameValuePredicate.Path(PushNotificationMessage.TYPE, "version"));
+  }
+
+  private List<String> consoleIds(AssetQuery assetQuery) {
+    return assetStorageService.findAll(assetQuery).stream()
+        .map(Asset::getId)
+        .distinct()
+        .toList();
   }
 
   protected static boolean isLinkedToFcmProvider(ConsoleAsset asset) {

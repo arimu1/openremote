@@ -400,17 +400,11 @@ class NotificationTest extends Specification implements ManagerContainerTrait {
     advancePseudoClock(1, TimeUnit.HOURS, container)
     adminNotificationResource.sendNotification(null, notification)
 
-    then: "the missing FCM token is recorded for the console without a token and the other console is still sent"
-    ex = thrown()
-    ex.response.withCloseable { r ->
-      assert r.status == 400
-      return true
-    }
+    then: "the notification should have been sent"
     conditions.eventually {
-      assert notificationTargetIds.contains(testuser3Console1.id)
+      assert notificationIds.size() == 1
       assert notificationTargetIds.contains(testuser3Console2.id)
-      def failedNotifications = adminNotificationResource.getNotifications(null, null, null, null, null, null, null, testuser3Console1.id, null, null, null, null, null)
-      assert failedNotifications.any { it.error?.contains("No FCM token found for console") }
+      assert !notificationTargetIds.contains(testuser3Console1.id)
     }
 
     when: "all linked consoles for a user lack an FCM token"
@@ -421,6 +415,9 @@ class NotificationTest extends Specification implements ManagerContainerTrait {
       it.get(PushNotificationMessage.TYPE)
     }.get().getData().put("token", null)
     assetStorageService.merge(testUser3Console2Asset)
+    conditions.eventually {
+      assert pushNotificationHandler.consoleFCMTokenMap.get(testUser3Console2Asset.id) == null
+    }
     notification.targets = [new Notification.Target(Notification.TargetType.USER, keycloakTestSetup.testuser3Id)]
     advancePseudoClock(1, TimeUnit.HOURS, container)
     adminNotificationResource.sendNotification(null, notification)
@@ -465,7 +462,7 @@ class NotificationTest extends Specification implements ManagerContainerTrait {
     conditions.eventually {
       assert adminNotificationResource.getNotifications(null, null, null, null, null, null, null, testuser2Console.id, null, null, null, null, null).length == 2
       notifications = adminNotificationResource.getNotifications(null, null, null, null, null, null, null, testuser3Console1.id, null, null, null, null, null)
-      assert notifications.length == 8
+      assert notifications.length == 7
       assert notifications.every {n ->
         PushNotificationMessage pushMessage = n.message as PushNotificationMessage
         pushMessage.getTitle() == "Test Action" &&
@@ -486,7 +483,7 @@ class NotificationTest extends Specification implements ManagerContainerTrait {
     then: "the notification should have been updated"
     conditions.eventually {
       notifications = adminNotificationResource.getNotifications(null, null, null, null, null, null, null, testuser3Console1.id, null, null, null, null, null)
-      assert notifications.length == 8
+      assert notifications.length == 7
       assert notifications.count {n -> n.deliveredOn != null} == 1
     }
 
@@ -498,7 +495,7 @@ class NotificationTest extends Specification implements ManagerContainerTrait {
     then: "the notification should have been updated"
     conditions.eventually {
       notifications = adminNotificationResource.getNotifications(null, null, null, null, null, null, null, testuser3Console1.id, null, null, null, null, null)
-      assert notifications.length == 8
+      assert notifications.length == 7
       assert notifications.count {n ->
         n.deliveredOn != null && n.acknowledgedOn != null && n.acknowledgement == "\"dismissed\""
       } == 1
