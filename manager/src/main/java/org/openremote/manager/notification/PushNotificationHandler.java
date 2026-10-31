@@ -266,8 +266,7 @@ public class PushNotificationHandler extends RouteBuilder implements Notificatio
             if (consoleAssetIds.isEmpty()) {
               consoleAssetIds =
                   consoleIds(
-                      consoleAssetsLinkedTo(targetType, targetId)
-                          .attributes(fcmProviderVersion()));
+                      consoleAssetsLinkedTo(targetType, targetId).attributes(fcmProviderVersion()));
             }
 
             if (!consoleAssetIds.isEmpty()) {
@@ -625,10 +624,7 @@ public class PushNotificationHandler extends RouteBuilder implements Notificatio
   }
 
   private List<String> consoleIds(AssetQuery assetQuery) {
-    return assetStorageService.findAll(assetQuery).stream()
-        .map(Asset::getId)
-        .distinct()
-        .toList();
+    return assetStorageService.findAll(assetQuery).stream().map(Asset::getId).distinct().toList();
   }
 
   protected static boolean isLinkedToFcmProvider(ConsoleAsset asset) {

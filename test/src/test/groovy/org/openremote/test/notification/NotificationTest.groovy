@@ -612,6 +612,19 @@ class NotificationTest extends Specification implements ManagerContainerTrait {
     when: "a repeat frequency is set and a notification is sent"
     // Clear exception flag
     throwPushHandlerException = false
+    // The missing-token scenario cleared both consoles. Later sends still need a token.
+    def fcmToken = "23123213ad2313b0897efd"
+    [testuser3Console1, testuser3Console2].each { console ->
+      def asset = assetStorageService.find(console.id) as ConsoleAsset
+      asset.getConsoleProviders().map {
+        it.get(PushNotificationMessage.TYPE)
+      }.get().getData().put("token", fcmToken)
+      assetStorageService.merge(asset)
+    }
+    conditions.eventually {
+      assert pushNotificationHandler.consoleFCMTokenMap.get(testuser3Console1.id) == fcmToken
+      assert pushNotificationHandler.consoleFCMTokenMap.get(testuser3Console2.id) == fcmToken
+    }
     // Move clock to beginning of next hour
     def advancement = Instant.ofEpochMilli(getClockTimeOf(container))
             .truncatedTo(ChronoUnit.HOURS)
